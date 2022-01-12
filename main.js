@@ -8,7 +8,7 @@ let pixels = [];
 const BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 40;
 const VIS_HEIGHT = 20;
-const GRAVITY = 1/4;
+const GRAVITY = 1/64;
 const LOCK_DELAY = 60;
 const DAS = 0;
 const ARR = 0;
@@ -46,6 +46,7 @@ function Piece(type) {
 	this.shape;
 	this.color;
 	this.lockTimer;
+	this.rotation = 0;
 	switch(this.name) {
 		case "I":
 			this.shape = [[0, 0, 0, 0, 0],
@@ -95,32 +96,14 @@ function Piece(type) {
 			throw `Expected tetrimino, but got ${this.name}`;
 	}
 
-	this.fall = function() {
+	this.fall = function(dist = GRAVITY) {
 		let nextPos = this.position.slice();
-		nextPos[1] -= GRAVITY;
+		nextPos[1] -= dist;
+		let lockOutTest = false;
 		if(Math.floor(nextPos[1]) === Math.floor(this.position[1])) {
-			this.position[1] = nextPos[1];
-			return;
-		}
-		let bottom = Math.floor(nextPos[1]);
-		let bottomRow;
-		if(this.shape.length === 5) {
-			if(this.shape[4].includes(1)) {
-				bottom -= 2;
-				bottomRow = this.shape[4];
-			} else if(this.shape[3].includes(1)) {
-				bottom--;
-				bottomRow = this.shape[3];
-			} else {
-				bottomRow = this.shape[2];
-			}
-		} else {
-			if(this.shape[2].includes(1)) {
-				bottom--;
-				bottomRow = this.shape[2];
-			} else {
-				bottomRow = this.shape[1];
-			}
+			nextPos[1]--;
+			lockOutTest = true;
+			//return;
 		}
 		let halfStep = Math.floor(this.shape.length / 2);
 		let isClipped;
@@ -135,7 +118,7 @@ function Piece(type) {
 					return typeof toCheck.col !== "undefined";
 				});
 			});
-		} while(isClipped && Math.floor(nextPos[1]) + vertOff++ <= Math.floor(this.position[1]))
+		} while(isClipped && Math.floor(nextPos[1]) + ++vertOff <= Math.floor(this.position[1]))
 
 		if(Math.floor(nextPos[1]) + vertOff === Math.floor(this.position[1])) {
 			// We are on the floor.
@@ -144,6 +127,10 @@ function Piece(type) {
 			// Lock out!!!
 			throw `Lock out!`;
 		} else {
+			if(lockOutTest) {
+				this.position[1] -= GRAVITY;
+				return;
+			}
 			this.position[1] = nextPos[1] + vertOff;
 		}
 	}
@@ -177,12 +164,24 @@ function Piece(type) {
 					});
 		if(!isClipped) {
 			this.position = nextPos;
+			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
 		}
 	}
 
 	this.lock = function() {
 		if(typeof this.lockTimer === "undefined") return;
-		this.lockTimer--;
+		let nextPos = [this.position[0], this.position[1] - 1];
+		let halfStep = Math.floor(this.shape.length / 2);
+		let isGrounded = this.shape.some(function(row, rO) {
+				let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
+				if(typeof rowCheck === "undefined") return row.includes(1);
+				return row.some(function(mino, offset) {
+					if(mino === 0) return false;
+					let toCheck = rowCheck[nextPos[0] - halfStep + offset];
+					return typeof toCheck.col !== "undefined";
+				});
+			});
+		if(isGrounded) this.lockTimer--;
 		if(this.lockTimer === 0) {
 			let halfStep = Math.floor(this.shape.length / 2);
 			for(let i = -halfStep; i + halfStep < this.shape.length; i++) {
@@ -196,7 +195,89 @@ function Piece(type) {
 			return true;
 		}
 	}
+
+	this.rotate = function(direction) {
+		// direction: "CW" or "CCW"
+		let newShape = [];
+		let newRotState = this.rotation;
+		if(direction === "CW") {
+			for(let i = 0; i < this.shape.length; i++) { // what column?
+				let newRow = [];
+				for(let j = this.shape.length - 1; j >= 0; j--) { // what row?
+					newRow.push(this.shape[j][i]);
+				}
+				newShape.push(newRow);
+			}
+			newRotState = (newRotState + 1) % 4;
+		} else {
+			for(let i = this.shape.length - 1; i >= 0; i--) { // what column?
+				let newRow = [];
+				for(let j = 0; j < this.shape.length; j++) { // what row?
+					newRow.push(this.shape[j][i]);
+				}
+				newShape.push(newRow);
+			}
+			newRotState = (newRotState + 3) % 4; // or newRotState - 1 + 4
+		}
+
+		let offsetTable;
+		if(this.name === "I") {
+			offsetTable = I_OFFSETS;
+		} else if(this.name === "O") {
+			offsetTable = O_OFFSETS;
+		} else {
+			offsetTable = JLSTZ_OFFSETS;
+		}
+
+		let nextKick = 0;
+		let halfStep = Math.floor(this.shape.length / 2);
+		let isClipped;
+		let nextPos;
+		do {
+			let nextOffset = offsetTable[nextKick++][this.rotation].slice();
+			nextOffset[0] -= offsetTable[nextKick - 1][newRotState][0];
+			nextOffset[1] -= offsetTable[nextKick - 1][newRotState][1];
+			nextPos = [this.position[0] + nextOffset[0], this.position[1] + nextOffset[1]];
+			isClipped = newShape.some(function(row, rO) {
+					let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
+					if(typeof rowCheck === "undefined") return row.includes(1);
+					return row.some(function(mino, offset) {
+						if(mino === 0) return false;
+						let toCheck = rowCheck[nextPos[0] - halfStep + offset];
+						return typeof toCheck === "undefined"
+							|| typeof toCheck.col !== "undefined";
+					});
+				});
+		} while(isClipped && nextKick !== offsetTable.length)
+		if(!isClipped) {
+			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
+			this.rotation = newRotState;
+			this.shape = newShape;
+			this.position = nextPos;
+		}
+	}
 }
+
+const I_OFFSETS = [
+	// 0         R/CW       2        L/CCW
+	[[ 0,  0], [-1,  0], [-1,  1], [ 0,  1]], // offset 1
+	[[-1,  0], [ 0,  0], [ 1,  1], [ 0,  1]], // offset 2
+	[[ 2,  0], [-1,  0], [-2,  1], [ 0,  1]], // offset 3
+	[[-1,  0], [ 0,  1], [ 1,  0], [ 0, -1]], // offset 4
+	[[ 2,  0], [ 0, -2], [-2,  0], [ 0,  2]]  // offset 5
+];
+const O_OFFSETS = [
+	// 0         R/CW       2        L/CCW
+	[[ 0,  0], [ 0, -1], [-1, -1], [-1,  0]]  // offset 1
+];
+const JLSTZ_OFFSETS = [
+	// 0         R/CW       2        L/CCW
+	[[ 0,  0], [ 0,  0], [ 0,  0], [ 0,  0]], // offset 1
+	[[ 0,  0], [ 1,  0], [ 0,  0], [-1,  0]], // offset 2
+	[[ 0,  0], [ 1, -1], [ 0,  0], [-1, -1]], // offset 3
+	[[ 0,  0], [ 0,  2], [ 0,  0], [ 0,  2]], // offset 4
+	[[ 0,  0], [ 1,  2], [ 0,  0], [-1,  2]]  // offset 5
+];
 
 let currPiece;
 const PIECES = ["I", "J", "L", "O", "S", "Z", "T"];
@@ -226,8 +307,23 @@ function mainLoop() {
 		currPiece.display();
 		currPiece.fall();
 		if(currPiece.lock()) {
-
-			// check line clears
+			let lineClears = pixels.filter(function(row) {
+				return row.every(e => typeof e.col !== "undefined");
+			});
+			for(let i = lineClears.length - 1; i >= 0; i--) {
+				let rowToClear = +lineClears[i][0].id.split(",")[0];
+				pixels.forEach(function(row, rI) {
+					if(rI === BOARD_HEIGHT - 1) {
+						for(let i = 0; i < row.length; i++) {
+							row[i].col = undefined;
+						}
+					} else if(rI >= rowToClear) {
+						for(let i = 0; i < row.length; i++) {
+							row[i].col = pixels[rI + 1][i].col;
+						}
+					}
+				});
+			}
 
 			currPiece = undefined;
 		}
@@ -243,5 +339,13 @@ document.onkeydown = function(e) {
 		currPiece.move("left");
 	} else if(e.key === "ArrowRight") {
 		currPiece.move("right");
+	} else if(e.key === "ArrowUp") {
+		currPiece.fall(25);
+	} else if(e.key === "ArrowDown") {
+		currPiece.fall(1);
+	} else if(e.key.toLowerCase() === "z") {
+		currPiece.rotate("CCW");
+	} else if(e.key.toLowerCase() === "x") {
+		currPiece.rotate("CW");
 	}
 }
