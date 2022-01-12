@@ -45,6 +45,7 @@ function Piece(type) {
 	this.position = [Math.floor((BOARD_WIDTH - 1) / 2), 21];
 	this.shape;
 	this.color;
+	this.ghostColor;
 	this.lockTimer;
 	this.rotation = 0;
 	switch(this.name) {
@@ -55,42 +56,49 @@ function Piece(type) {
 						  [0, 0, 0, 0, 0], 
 						  [0, 0, 0, 0, 0]];
 			this.color = "cyan";
+			this.ghostColor = "#008080";
 			break;
 		case "J":
 			this.shape = [[1, 0, 0], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
 			this.color = "blue";
+			this.ghostColor = "#000080";
 			break;
 		case "L":
 			this.shape = [[0, 0, 1], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
 			this.color = "orange";
+			this.ghostColor = "#804000";
 			break;
 		case "O":
 			this.shape = [[0, 1, 1],
 						  [0, 1, 1], 
 						  [0, 0, 0]];
 			this.color = "yellow";
+			this.ghostColor = "#808000";
 			break;
 		case "S":
 			this.shape = [[0, 1, 1], 
 						  [1, 1, 0], 
 						  [0, 0, 0]];
-			this.color = "green";
+			this.color = "lime";
+			this.ghostColor = "#008000";
 			break;
 		case "T":
 			this.shape = [[0, 1, 0], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "purple";
+			this.color = "fuchsia";
+			this.ghostColor = "#800080";
 			break;
 		case "Z":
 			this.shape = [[1, 1, 0], 
 						  [0, 1, 1], 
 						  [0, 0, 0]];
 			this.color = "red";
+			this.ghostColor = "#800000";
 			break;
 		default:
 			throw `Expected tetrimino, but got ${this.name}`;
@@ -100,48 +108,78 @@ function Piece(type) {
 		let nextPos = this.position.slice();
 		nextPos[1] -= dist;
 		let lockOutTest = false;
+		let difference;
 		if(Math.floor(nextPos[1]) === Math.floor(this.position[1])) {
 			nextPos[1]--;
+			difference = 1;
 			lockOutTest = true;
-			//return;
+		} else {
+			difference = Math.floor(this.position[1]) - Math.floor(nextPos[1]);
 		}
 		let halfStep = Math.floor(this.shape.length / 2);
 		let isClipped;
 		let vertOff = 0;
+		let thisPos = this.position;
 		do {
 			isClipped = this.shape.some(function(row, rO) {
-				let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO + vertOff];
+				let rowCheck = pixels[Math.floor(thisPos[1]) + halfStep - rO - vertOff];
 				if(typeof rowCheck === "undefined") return row.includes(1);
 				return row.some(function(mino, offset) {
 					if(mino === 0) return false;
-					let toCheck = rowCheck[nextPos[0] - halfStep + offset];
+					let toCheck = rowCheck[thisPos[0] - halfStep + offset];
 					return typeof toCheck.col !== "undefined";
 				});
 			});
-		} while(isClipped && Math.floor(nextPos[1]) + ++vertOff <= Math.floor(this.position[1]))
-
-		if(Math.floor(nextPos[1]) + vertOff === Math.floor(this.position[1])) {
+		} while(!isClipped && ++vertOff <= difference)
+		vertOff--;
+		if(vertOff === 0) {
 			// We are on the floor.
 			if(typeof this.lockTimer === "undefined") this.lockTimer = LOCK_DELAY;
-		} else if(Math.floor(nextPos[1]) + vertOff > Math.floor(this.position[1])) {
+		} else if(vertOff === -1) {
 			// Lock out!!!
 			throw `Lock out!`;
 		} else {
-			if(lockOutTest) {
-				this.position[1] -= GRAVITY;
+			if(lockOutTest || dist < 1) {
+				this.position[1] -= dist;
 				return;
 			}
-			this.position[1] = nextPos[1] + vertOff;
+			this.position[1] -= vertOff;
 		}
 	}
 
 	this.display = function() {
 		let halfStep = Math.floor(this.shape.length / 2);
+
+		let nextPos = [this.position[0], this.position[1] - BOARD_HEIGHT];
+		let difference = Math.floor(this.position[1]) - Math.floor(nextPos[1]);
+		let isClipped;
+		let vertOff = 0;
+		let thisPos = this.position;
+		do {
+			isClipped = this.shape.some(function(row, rO) {
+				let rowCheck = pixels[Math.floor(thisPos[1]) + halfStep - rO - vertOff];
+				if(typeof rowCheck === "undefined") return row.includes(1);
+				return row.some(function(mino, offset) {
+					if(mino === 0) return false;
+					let toCheck = rowCheck[thisPos[0] - halfStep + offset];
+					return typeof toCheck.col !== "undefined";
+				});
+			});
+		} while(!isClipped && ++vertOff <= difference)
+		vertOff--;
+		for(let i = -halfStep; i + halfStep < this.shape.length; i++) {
+			for(let j = -halfStep; j + halfStep <= this.shape.length; j++) {
+				if(this.shape[i + halfStep][j + halfStep] === 1) {
+					pixels[Math.floor(thisPos[1]) - vertOff - i]
+						  [thisPos[0] + j].style = `background: ${this.ghostColor};`;
+				}
+			}
+		}
 		for(let i = -halfStep; i + halfStep < this.shape.length; i++) {
 			for(let j = -halfStep; j + halfStep <= this.shape.length; j++) {
 				if(this.shape[i + halfStep][j + halfStep] === 1) {
 					pixels[Math.floor(this.position[1]) - i]
-						  [Math.ceil(this.position[0]) + j].style = `background: ${this.color};`;
+						  [this.position[0] + j].style = `background: ${this.color};`;
 				}
 			}
 		}
@@ -340,7 +378,7 @@ document.onkeydown = function(e) {
 	} else if(e.key === "ArrowRight") {
 		currPiece.move("right");
 	} else if(e.key === "ArrowUp") {
-		currPiece.fall(25);
+		currPiece.fall(BOARD_HEIGHT);
 	} else if(e.key === "ArrowDown") {
 		currPiece.fall(1);
 	} else if(e.key.toLowerCase() === "z") {
