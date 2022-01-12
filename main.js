@@ -25,15 +25,34 @@ window.onload = function() {
 	board = document.getElementById("board");
 	for(let i = BOARD_HEIGHT - 1; i >= 0; i--) {
 		let boardRow = document.createElement("TR");
+
+		for(let j = 0; j < 4; j++) {
+			let hold = document.createElement("TD");
+			hold.id = `Q${i},${j}`;
+			if(i === VIS_HEIGHT - 1) {
+				hold.textContent = "HOLD"[j];
+			}
+			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
+				boardRow.appendChild(hold);
+			}
+			pixels[i].push(hold);
+		}
+
+		let spacer = document.createElement("TD");
+		spacer.id = "spacer";
+		if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
+			boardRow.appendChild(spacer);
+		}
+		pixels[i].push(spacer);
 		for(let j = 0; j < BOARD_WIDTH; j++) {
 			const pixel = document.createElement("TD");
 			pixel.id = `${i},${j}`;
 			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 				boardRow.appendChild(pixel);
 			}
-			pixels[i][j] = pixel;
+			pixels[i].push(pixel);
 		}
-		let spacer = document.createElement("TD");
+		spacer = document.createElement("TD");
 		spacer.id = "spacer";
 		if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 			boardRow.appendChild(spacer);
@@ -42,6 +61,9 @@ window.onload = function() {
 		for(let j = 0; j < 4; j++) {
 			let nextQueue = document.createElement("TD");
 			nextQueue.id = `Q${i},${j}`;
+			if(i === VIS_HEIGHT - 1) {
+				nextQueue.textContent = "NEXT"[j];
+			}
 			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 				boardRow.appendChild(nextQueue);
 			}
@@ -57,12 +79,13 @@ window.onload = function() {
 
 function Piece(type) {
 	this.name = type;
-	this.position = [Math.floor((BOARD_WIDTH - 1) / 2), 21];
+	this.position = [5 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
 	this.shape;
 	this.color;
 	this.ghostColor;
 	this.lockTimer;
 	this.rotation = 0;
+	this.hardDropped = false;
 	switch(this.name) {
 		case "I":
 			this.shape = [[0, 0, 0, 0, 0],
@@ -122,29 +145,15 @@ function Piece(type) {
 	this.fall = function(dist = GRAVITY) {
 		let nextPos = this.position.slice();
 		nextPos[1] -= dist;
-		let lockOutTest = false;
-		let difference;
 		if(Math.floor(nextPos[1]) === Math.floor(this.position[1])) {
-			nextPos[1]--;
-			difference = 1;
-			lockOutTest = true;
-		} else {
-			difference = Math.floor(this.position[1]) - Math.floor(nextPos[1]);
+			this.position[1] -= dist;
+			return;
 		}
-		let halfStep = Math.floor(this.shape.length / 2);
+		let difference = Math.floor(this.position[1]) - Math.floor(nextPos[1]);
 		let isClipped;
 		let vertOff = 0;
-		let thisPos = this.position;
 		do {
-			isClipped = this.shape.some(function(row, rO) {
-				let rowCheck = pixels[Math.floor(thisPos[1]) + halfStep - rO - vertOff];
-				if(typeof rowCheck === "undefined") return row.includes(1);
-				return row.some(function(mino, offset) {
-					if(mino === 0) return false;
-					let toCheck = rowCheck[thisPos[0] - halfStep + offset];
-					return typeof toCheck.col !== "undefined";
-				});
-			});
+			isClipped = this.collision([this.position[0], this.position[1] - vertOff]);
 		} while(!isClipped && ++vertOff <= difference)
 		vertOff--;
 		if(vertOff === 0) {
@@ -154,12 +163,25 @@ function Piece(type) {
 			// Lock out!!!
 			throw `Lock out!`;
 		} else {
-			if(lockOutTest || dist < 1) {
+			if(dist < 1) {
 				this.position[1] -= dist;
 				return;
 			}
 			this.position[1] -= vertOff;
 		}
+	}
+
+	this.collision = function(nextPos, shape = this.shape) {
+		let halfStep = Math.floor(shape.length / 2);
+		return shape.some(function(row, rO) {
+			let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
+			if(typeof rowCheck === "undefined") return row.includes(1);
+			return row.some(function(mino, offset) {
+				if(mino === 0) return false;
+				let toCheck = rowCheck[nextPos[0] - halfStep + offset];
+				return typeof toCheck.col !== "undefined" || toCheck.id === "spacer";
+			});
+		});
 	}
 
 	this.display = function() {
@@ -169,24 +191,15 @@ function Piece(type) {
 		let difference = Math.floor(this.position[1]) - Math.floor(nextPos[1]);
 		let isClipped;
 		let vertOff = 0;
-		let thisPos = this.position;
 		do {
-			isClipped = this.shape.some(function(row, rO) {
-				let rowCheck = pixels[Math.floor(thisPos[1]) + halfStep - rO - vertOff];
-				if(typeof rowCheck === "undefined") return row.includes(1);
-				return row.some(function(mino, offset) {
-					if(mino === 0) return false;
-					let toCheck = rowCheck[thisPos[0] - halfStep + offset];
-					return typeof toCheck.col !== "undefined";
-				});
-			});
+			isClipped = this.collision([this.position[0], this.position[1] - vertOff]);
 		} while(!isClipped && ++vertOff <= difference)
 		vertOff--;
 		for(let i = -halfStep; i + halfStep < this.shape.length; i++) {
 			for(let j = -halfStep; j + halfStep <= this.shape.length; j++) {
 				if(this.shape[i + halfStep][j + halfStep] === 1) {
-					pixels[Math.floor(thisPos[1]) - vertOff - i]
-						  [thisPos[0] + j].style = `background: ${this.ghostColor};`;
+					pixels[Math.floor(this.position[1]) - vertOff - i]
+						  [this.position[0] + j].style = `background: ${this.ghostColor};`;
 				}
 			}
 		}
@@ -201,20 +214,11 @@ function Piece(type) {
 	}
 
 	this.move = function(direction) {
+		if(this.hardDropped) return;
 		// direction: "left" or "right"
 		let nextPos = [this.position[0] + (direction === "left" ? -1 : 1), this.position[1]];
 
-		let halfStep = Math.floor(this.shape.length / 2);
-		let isClipped;
-		isClipped = this.shape.some(function(row, rO) {
-						let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
-						return row.some(function(mino, offset) {
-							if(mino === 0) return false;
-							let toCheck = rowCheck[nextPos[0] - halfStep + offset];
-							return typeof toCheck === "undefined"
-								|| typeof toCheck.col !== "undefined";
-						});
-					});
+		let isClipped = this.collision(nextPos);
 		if(!isClipped) {
 			this.position = nextPos;
 			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
@@ -224,18 +228,9 @@ function Piece(type) {
 	this.lock = function() {
 		if(typeof this.lockTimer === "undefined") return;
 		let nextPos = [this.position[0], this.position[1] - 1];
-		let halfStep = Math.floor(this.shape.length / 2);
-		let isGrounded = this.shape.some(function(row, rO) {
-				let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
-				if(typeof rowCheck === "undefined") return row.includes(1);
-				return row.some(function(mino, offset) {
-					if(mino === 0) return false;
-					let toCheck = rowCheck[nextPos[0] - halfStep + offset];
-					return typeof toCheck.col !== "undefined";
-				});
-			});
+		let isGrounded = this.collision(nextPos);
 		if(isGrounded) this.lockTimer--;
-		if(this.lockTimer === 0) {
+		if(this.lockTimer <= 0) {
 			let halfStep = Math.floor(this.shape.length / 2);
 			for(let i = -halfStep; i + halfStep < this.shape.length; i++) {
 				for(let j = -halfStep; j + halfStep <= this.shape.length; j++) {
@@ -251,6 +246,7 @@ function Piece(type) {
 
 	this.rotate = function(direction) {
 		// direction: "CW" or "CCW"
+		if(this.hardDropped) return;
 		let newShape = [];
 		let newRotState = this.rotation;
 		if(direction === "CW") {
@@ -287,20 +283,11 @@ function Piece(type) {
 		let isClipped;
 		let nextPos;
 		do {
-			let nextOffset = offsetTable[nextKick++][this.rotation].slice();
-			nextOffset[0] -= offsetTable[nextKick - 1][newRotState][0];
-			nextOffset[1] -= offsetTable[nextKick - 1][newRotState][1];
+			let nextOffset = offsetTable[nextKick][this.rotation].slice();
+			nextOffset[0] -= offsetTable[nextKick][newRotState][0];
+			nextOffset[1] -= offsetTable[nextKick++][newRotState][1];
 			nextPos = [this.position[0] + nextOffset[0], this.position[1] + nextOffset[1]];
-			isClipped = newShape.some(function(row, rO) {
-					let rowCheck = pixels[Math.floor(nextPos[1]) + halfStep - rO];
-					if(typeof rowCheck === "undefined") return row.includes(1);
-					return row.some(function(mino, offset) {
-						if(mino === 0) return false;
-						let toCheck = rowCheck[nextPos[0] - halfStep + offset];
-						return typeof toCheck === "undefined"
-							|| typeof toCheck.col !== "undefined";
-					});
-				});
+			isClipped = this.collision(nextPos, newShape);
 		} while(isClipped && nextKick !== offsetTable.length)
 		if(!isClipped) {
 			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
@@ -337,6 +324,24 @@ const PIECES = ["I", "J", "L", "O", "S", "Z", "T"];
 let currBag = shuffle(PIECES.slice());
 const DEBUG_PIECE_SEQUENCE = [];
 let debugPieceInd = 0;
+
+const SHAPES = new Map();
+SHAPES.set("I", [[-2, 1], [-2, 2], [-2, 3], [-2, 4]]);
+SHAPES.set("O", [[-1, 2], [-1, 3], [-2, 2], [-2, 3]]);
+SHAPES.set("T", [[-1, 2], [-2, 1], [-2, 2], [-2, 3]]);
+SHAPES.set("S", [[-1, 3], [-1, 2], [-2, 2], [-2, 1]]);
+SHAPES.set("Z", [[-1, 1], [-1, 2], [-2, 2], [-2, 3]]);
+SHAPES.set("J", [[-1, 1], [-2, 1], [-2, 2], [-2, 3]]);
+SHAPES.set("L", [[-1, 3], [-2, 1], [-2, 2], [-2, 3]]);
+const COLORS = new Map();
+COLORS.set("I", "cyan");
+COLORS.set("O", "yellow");
+COLORS.set("T", "fuchsia");
+COLORS.set("S", "lime");
+COLORS.set("Z", "red");
+COLORS.set("J", "blue");
+COLORS.set("L", "orange");
+
 function mainLoop() {
 	try {
 		pixels.forEach(function(row) {
@@ -348,6 +353,7 @@ function mainLoop() {
 		});
 
 		if(typeof currPiece === "undefined") {
+			if(!firstHold) hasHeld = false;
 			if(DEBUG_PIECE_SEQUENCE.length !== 0) {
 				if(debugPieceInd === DEBUG_PIECE_SEQUENCE.length) {
 					clearInterval(gameLoop);
@@ -361,54 +367,17 @@ function mainLoop() {
 				currPiece = new Piece(currBag.shift());
 				for(let i = 0; i < VIS_HEIGHT; i++) {
 					for(let j = 0; j < 4; j++) {
-						pixels[i][BOARD_WIDTH + j + 1].style = "";
+						pixels[i][BOARD_WIDTH + j + 6].style = "";
 					}
 				}
 				for(let i = 0; i < PREVIEW_LENGTH; i++) {
-					let thisPreH = VIS_HEIGHT - (i * 4);
-					switch(currBag[i]) {
-						case "I":
-							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: cyan`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: cyan`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: cyan`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 4].style = `background: cyan`;
-							break;
-						case "O":
-							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: yellow`;
-							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: yellow`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: yellow`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: yellow`;
-							break;
-						case "T":
-							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: fuchsia`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: fuchsia`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: fuchsia`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: fuchsia`;
-							break;
-						case "S":
-							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: lime`;
-							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: lime`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: lime`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: lime`;
-							break;
-						case "Z":
-							pixels[thisPreH - 1][BOARD_WIDTH + 1].style = `background: red`;
-							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: red`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: red`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: red`;
-							break;
-						case "J":
-							pixels[thisPreH - 1][BOARD_WIDTH + 1].style = `background: blue`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: blue`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: blue`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: blue`;
-							break;
-						case "L":
-							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: orange`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: orange`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: orange`;
-							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: orange`;
-							break;
+					let thisPreH = VIS_HEIGHT - (i * 4) - 2;
+					let thisPreW = BOARD_WIDTH + 5;
+					let thisShape = SHAPES.get(currBag[i]);
+					let thisColor = COLORS.get(currBag[i]);
+					for(let j = 0; j < thisShape.length; j++) {
+						pixels[thisPreH + thisShape[j][0]][thisPreW + thisShape[j][1]].style
+							= `background: ${thisColor}`;
 					}
 				}
 			}
@@ -417,11 +386,14 @@ function mainLoop() {
 		currPiece.display();
 		currPiece.fall();
 		if(currPiece.lock()) {
+			firstHold = false;
 			let lineClears = pixels.filter(function(row) {
-				return row.every(e => typeof e.col !== "undefined" || e.id === "spacer" || e.id[0] === "Q");
+				return row.every(e => typeof e.col !== "undefined" 
+								   || e.id === "spacer"
+								   || e.id[0] === "Q");
 			});
 			for(let i = lineClears.length - 1; i >= 0; i--) {
-				let rowToClear = +lineClears[i][0].id.split(",")[0];
+				let rowToClear = +lineClears[i][10].id.split(",")[0];
 				pixels.forEach(function(row, rI) {
 					if(rI === BOARD_HEIGHT - 1) {
 						for(let i = 0; i < row.length; i++) {
@@ -451,12 +423,16 @@ document.onkeydown = function(e) {
 		currPiece.move("right");
 	} else if(e.key === "ArrowUp") {
 		currPiece.fall(BOARD_HEIGHT);
+		currPiece.hardDropped = true;
+		currPiece.lockTimer = 0;
 	} else if(e.key === "ArrowDown") {
 		currPiece.fall(1);
 	} else if(e.key.toLowerCase() === "z") {
 		currPiece.rotate("CCW");
 	} else if(e.key.toLowerCase() === "x") {
 		currPiece.rotate("CW");
+	} else if(e.key === "Shift") {
+		hold();
 	}
 }
 
@@ -466,4 +442,35 @@ function shuffle(arr) {
 		finalOut.push(...arr.splice(Math.floor(Math.random() * arr.length), 1));
 	}
 	return finalOut;
+}
+
+let hasHeld = false;
+let firstHold = false;
+let heldPiece;
+function hold() {
+	if(hasHeld) return;
+	hasHeld = true;
+	if(typeof heldPiece === "undefined") firstHold = true;
+	let toHold = currPiece;
+	currPiece = heldPiece;
+	toHold.position = [5 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
+	while(toHold.rotation !== 0) {
+		toHold.rotate("CW");
+	}
+	toHold.position = [5 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
+	toHold.hardDropped = false;
+	heldPiece = toHold;
+	for(let i = 0; i < VIS_HEIGHT; i++) {
+		for(let j = 0; j < 4; j++) {
+			pixels[i][j].style = "";
+		}
+	}
+	let thisPreH = VIS_HEIGHT - 2;
+	let thisPreW = -1;
+	let thisShape = SHAPES.get(heldPiece.name);
+	let thisColor = COLORS.get(heldPiece.name);
+	for(let j = 0; j < thisShape.length; j++) {
+		pixels[thisPreH + thisShape[j][0]][thisPreW + thisShape[j][1]].style
+			= `background: ${thisColor}`;
+	}
 }
