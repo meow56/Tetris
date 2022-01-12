@@ -13,6 +13,7 @@ const LOCK_DELAY = 60;
 const DAS = 0;
 const ARR = 0;
 // To do: implement DAS and ARR that doesn't rely on the OS's repeating function
+const PREVIEW_LENGTH = 5;
 
 for(let i = 0; i < BOARD_HEIGHT; i++) {
 	pixels.push([]);
@@ -23,17 +24,31 @@ let gameLoop;
 window.onload = function() {
 	board = document.getElementById("board");
 	for(let i = BOARD_HEIGHT - 1; i >= 0; i--) {
+		let boardRow = document.createElement("TR");
 		for(let j = 0; j < BOARD_WIDTH; j++) {
-			const pixel = document.createElement("SPAN");
-			pixel.id = i.toString() + "," + j;
-			pixel.textContent = " ";
+			const pixel = document.createElement("TD");
+			pixel.id = `${i},${j}`;
 			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
-				board.appendChild(pixel);
+				boardRow.appendChild(pixel);
 			}
 			pixels[i][j] = pixel;
 		}
+		let spacer = document.createElement("TD");
+		spacer.id = "spacer";
 		if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
-			board.appendChild(document.createElement("BR"));
+			boardRow.appendChild(spacer);
+		}
+		pixels[i].push(spacer);
+		for(let j = 0; j < 4; j++) {
+			let nextQueue = document.createElement("TD");
+			nextQueue.id = `Q${i},${j}`;
+			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
+				boardRow.appendChild(nextQueue);
+			}
+			pixels[i].push(nextQueue);
+		}
+		if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
+			board.appendChild(boardRow);
 		}
 	}
 	console.log(pixels);
@@ -319,12 +334,15 @@ const JLSTZ_OFFSETS = [
 
 let currPiece;
 const PIECES = ["I", "J", "L", "O", "S", "Z", "T"];
+let currBag = shuffle(PIECES.slice());
 const DEBUG_PIECE_SEQUENCE = [];
 let debugPieceInd = 0;
 function mainLoop() {
 	try {
 		pixels.forEach(function(row) {
 			row.forEach(function(pixel) {
+				if(pixel.id === "spacer") return;
+				if(pixel.id[0] === "Q") return;
 				pixel.style = `background: ${pixel.col || "black"};`;
 			});
 		});
@@ -337,8 +355,62 @@ function mainLoop() {
 				}
 				currPiece = new Piece(DEBUG_PIECE_SEQUENCE[debugPieceInd++]);
 			} else {
-				// (not how tetris generates pieces)
-				currPiece = new Piece(PIECES[Math.floor(Math.random() * 7)]);
+				if(currBag.length <= PREVIEW_LENGTH) {
+					currBag = currBag.concat(shuffle(PIECES.slice()));
+				}
+				currPiece = new Piece(currBag.shift());
+				for(let i = 0; i < VIS_HEIGHT; i++) {
+					for(let j = 0; j < 4; j++) {
+						pixels[i][BOARD_WIDTH + j + 1].style = "";
+					}
+				}
+				for(let i = 0; i < PREVIEW_LENGTH; i++) {
+					let thisPreH = VIS_HEIGHT - (i * 4);
+					switch(currBag[i]) {
+						case "I":
+							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: cyan`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: cyan`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: cyan`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 4].style = `background: cyan`;
+							break;
+						case "O":
+							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: yellow`;
+							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: yellow`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: yellow`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: yellow`;
+							break;
+						case "T":
+							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: fuchsia`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: fuchsia`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: fuchsia`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: fuchsia`;
+							break;
+						case "S":
+							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: lime`;
+							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: lime`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: lime`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: lime`;
+							break;
+						case "Z":
+							pixels[thisPreH - 1][BOARD_WIDTH + 1].style = `background: red`;
+							pixels[thisPreH - 1][BOARD_WIDTH + 2].style = `background: red`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: red`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: red`;
+							break;
+						case "J":
+							pixels[thisPreH - 1][BOARD_WIDTH + 1].style = `background: blue`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: blue`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: blue`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: blue`;
+							break;
+						case "L":
+							pixels[thisPreH - 1][BOARD_WIDTH + 3].style = `background: orange`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 1].style = `background: orange`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 2].style = `background: orange`;
+							pixels[thisPreH - 2][BOARD_WIDTH + 3].style = `background: orange`;
+							break;
+					}
+				}
 			}
 		}
 
@@ -346,7 +418,7 @@ function mainLoop() {
 		currPiece.fall();
 		if(currPiece.lock()) {
 			let lineClears = pixels.filter(function(row) {
-				return row.every(e => typeof e.col !== "undefined");
+				return row.every(e => typeof e.col !== "undefined" || e.id === "spacer" || e.id[0] === "Q");
 			});
 			for(let i = lineClears.length - 1; i >= 0; i--) {
 				let rowToClear = +lineClears[i][0].id.split(",")[0];
@@ -386,4 +458,12 @@ document.onkeydown = function(e) {
 	} else if(e.key.toLowerCase() === "x") {
 		currPiece.rotate("CW");
 	}
+}
+
+function shuffle(arr) {
+	let finalOut = [];
+	while(arr.length !== 0) {
+		finalOut.push(...arr.splice(Math.floor(Math.random() * arr.length), 1));
+	}
+	return finalOut;
 }
