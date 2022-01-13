@@ -16,6 +16,8 @@ const DAS = 8;
 const ARR = 1;
 const PREVIEW_LENGTH = 5;
 
+const LEFT_MARGIN_WIDTH = 6;
+
 for(let i = 0; i < BOARD_HEIGHT; i++) {
 	pixels.push([]);
 }
@@ -27,14 +29,20 @@ window.onload = function() {
 	for(let i = BOARD_HEIGHT - 1; i >= 0; i--) {
 		let boardRow = document.createElement("TR");
 
-		for(let j = 0; j < 4; j++) {
+		for(let j = 0; j < LEFT_MARGIN_WIDTH; j++) {
 			let hold = document.createElement("TD");
 			hold.id = `Q${i},${j}`;
 			if(i === VIS_HEIGHT - 1) {
 				hold.textContent = "HOLD"[j];
 			}
 			if(i === VIS_HEIGHT - 7) {
-				hold.textContent = "LV01"[j];
+				hold.textContent = "LVL 01"[j];
+			}
+			if(i === VIS_HEIGHT - 9) {
+				hold.textContent = "SCORE"[j];
+			}
+			if(i === VIS_HEIGHT - 10) {
+				hold.textContent = "0";
 			}
 			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 				boardRow.appendChild(hold);
@@ -83,13 +91,15 @@ window.onload = function() {
 
 function Piece(type) {
 	this.name = type;
-	this.position = [5 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
+	this.position = [LEFT_MARGIN_WIDTH + 1 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
 	this.shape;
 	this.color;
 	this.ghostColor;
 	this.lockTimer;
 	this.rotation = 0;
 	this.hardDropped = false;
+	this.tSpin = false;
+	this.mini = false;
 	switch(this.name) {
 		case "I":
 			this.shape = [[0, 0, 0, 0, 0],
@@ -146,7 +156,7 @@ function Piece(type) {
 			throw `Expected tetrimino, but got ${this.name}`;
 	}
 
-	this.fall = function(dist = GRAVITY) {
+	this.fall = function(dist = GRAVITY, drop = 0) {
 		let nextPos = this.position.slice();
 		nextPos[1] -= dist;
 		if(Math.floor(nextPos[1]) === Math.floor(this.position[1])) {
@@ -171,7 +181,9 @@ function Piece(type) {
 				this.position[1] -= dist;
 				return;
 			}
+			this.tSpin = false;
 			this.position[1] -= vertOff;
+			score += drop * vertOff;
 		}
 	}
 
@@ -226,6 +238,7 @@ function Piece(type) {
 		if(!isClipped) {
 			this.position = nextPos;
 			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
+			this.tSpin = false;
 		}
 	}
 
@@ -243,6 +256,49 @@ function Piece(type) {
 							  [Math.ceil(this.position[0]) + j].col = this.color;
 					}
 				}
+			}
+			if(this.tSpin) {
+				let filledCorners = 0;
+				let thisY = Math.floor(this.position[1]);
+				let thisX = this.position[0];
+				filledCorners += +(pixels[thisY + 1][thisX - 1].col !== "undefined");
+				filledCorners += +(pixels[thisY + 1][thisX + 1].col !== "undefined");
+				let downRow = pixels[thisY - 1];
+				if(typeof downRow === "undefined") {
+					filledCorners += 2;
+				} else {
+					filledCorners += +(downRow[thisX - 1].col !== "undefined");
+					filledCorners += +(downRow[thisX + 1].col !== "undefined");
+				}
+				if(filledCorners < 3) this.tSpin = false;
+				let miniCheck = [this.rotation, (this.rotation + 1) % 4];
+				let miniFilled = 0;
+				/* (rotation independent)
+				 * 0 # 1
+				 * # # #
+				 * 3   2
+				 */
+				if(miniCheck.includes(0)) {
+					miniFilled += +(pixels[thisY + 1][thisX - 1].col !== "undefined");
+				}
+				if(miniCheck.includes(1)) {
+					miniFilled += +(pixels[thisY + 1][thisX + 1].col !== "undefined");
+				}
+				if(miniCheck.includes(2)) {
+					if(typeof downRow === "undefined") {
+						miniFilled++;
+					} else {
+						miniFilled += +(downRow[thisX + 1].col !== "undefined");
+					}
+				}
+				if(miniCheck.includes(3)) {
+					if(typeof downRow === "undefined") {
+						miniFilled++;
+					} else {
+						miniFilled += +(downRow[thisX - 1].col !== "undefined");
+					}
+				}
+				if(miniFilled < 2) this.mini = true;
 			}
 			return true;
 		}
@@ -294,6 +350,7 @@ function Piece(type) {
 			isClipped = this.collision(nextPos, newShape);
 		} while(isClipped && nextKick !== offsetTable.length)
 		if(!isClipped) {
+			if(this.name === "T") this.tSpin = true;
 			if(typeof this.lockTimer !== "undefined") this.lockTimer = LOCK_DELAY;
 			this.rotation = newRotState;
 			this.shape = newShape;
@@ -352,7 +409,9 @@ let controller = [0, 0, 0, 0, 0, 0, 0];
 
 let linesCleared = 0;
 let level = 1;
-let points = 0;
+let score = 0;
+let backToBack = false;
+let combo = -1;
 
 function mainLoop() {
 	try {
@@ -380,12 +439,12 @@ function mainLoop() {
 				currPiece = new Piece(currBag.shift());
 				for(let i = 0; i < VIS_HEIGHT; i++) {
 					for(let j = 0; j < 4; j++) {
-						pixels[i][BOARD_WIDTH + j + 6].style = "";
+						pixels[i][BOARD_WIDTH + j + LEFT_MARGIN_WIDTH + 2].style = "";
 					}
 				}
 				for(let i = 0; i < PREVIEW_LENGTH; i++) {
 					let thisPreH = VIS_HEIGHT - (i * 4) - 2;
-					let thisPreW = BOARD_WIDTH + 5;
+					let thisPreW = BOARD_WIDTH + LEFT_MARGIN_WIDTH + 1;
 					let thisShape = SHAPES.get(currBag[i]);
 					let thisColor = COLORS.get(currBag[i]);
 					for(let j = 0; j < thisShape.length; j++) {
@@ -420,11 +479,13 @@ function mainLoop() {
 		}
 
 		if(controller[5] === 1) {
-			currPiece.fall(BOARD_HEIGHT);
+			currPiece.fall(BOARD_HEIGHT, 2);
 			currPiece.hardDropped = true;
 			currPiece.lockTimer = 0;
 		}
-		if(controller[6]) currPiece.fall(1);
+		if(controller[6]) {
+			currPiece.fall(1, 1);
+		}
 
 		if(currPiece.fall()) {
 			pixels.forEach(function(row, rI) {
@@ -435,7 +496,8 @@ function mainLoop() {
 					let halfBoard = Math.floor(VIS_HEIGHT / 2);
 					if(rI === halfBoard + 1) {
 						pixel.style = "";
-						pixel.textContent = "     GAME  OVER"[index];
+						let toDisplay = "GAME  OVER".padStart(11 + LEFT_MARGIN_WIDTH, " ");
+						pixel.textContent = toDisplay[index];
 					} else if(rI === halfBoard || rI === halfBoard + 2) {
 						pixel.style = "";
 					}
@@ -451,6 +513,29 @@ function mainLoop() {
 								   || e.id === "spacer"
 								   || e.id[0] === "Q");
 			});
+
+			if(lineClears.length === 0) {
+				combo = -1;
+			} else {
+				score += 50 * ++combo * level;
+			}
+
+			if(lineClears.length !== 4
+			   && lineClears.length !== 0
+			   && !currPiece.tSpin) backToBack = false;
+			let lineClearPoints = [0, 100, 300, 500, 800];
+			let tClearPoints = [400, 800, 1200, 1600];
+			let miniPoints = [100, 200, 1200];
+			if(currPiece.tSpin) {
+				if(currPiece.mini) {
+					score += miniPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+				} else {
+					score += tClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+				}
+			} else {
+				score += lineClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+			}
+			if(lineClears.length === 4 || currPiece.tSpin) backToBack = true;
 			for(let i = lineClears.length - 1; i >= 0; i--) {
 				let rowToClear = +lineClears[i][10].id.split(",")[0];
 				pixels.forEach(function(row, rI) {
@@ -476,6 +561,10 @@ function mainLoop() {
 			}
 
 			currPiece = undefined;
+		}
+		let displayScore = score.toString().padStart(6, "0");
+		for(let i = 0; i < displayScore.length; i++) {
+			pixels[VIS_HEIGHT - 10][i].textContent = displayScore[i];
 		}
 	} catch(e) {
 		clearInterval(gameLoop);
