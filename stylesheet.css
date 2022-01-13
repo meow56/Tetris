@@ -2,7 +2,10 @@ td {
 	display: inline-block;
 	min-width: 15px;
 	min-height: 15px;
+	max-width: 15px;
+	max-height: 15px;
 	border: none;
+	font-family: "DejaVu Sans Mono", monospace;
 }
 
 tr {
@@ -13,4 +16,12 @@ tr {
 #spacer {
 	min-width: 45px;
 	min-height: 15px;
+}
+
+p {
+	max-width: 400px;
+}
+
+body {
+	padding-left: 25%;
 }

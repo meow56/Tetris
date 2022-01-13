@@ -8,11 +8,12 @@ let pixels = [];
 const BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 40;
 const VIS_HEIGHT = 20;
-const GRAVITY = 1/64;
+let GRAVITY = 1/64;
+const LV_GRAV_MULT = 1.3;
+const LV_LINE_REQ = 20;
 const LOCK_DELAY = 60;
-const DAS = 0;
-const ARR = 0;
-// To do: implement DAS and ARR that doesn't rely on the OS's repeating function
+const DAS = 8;
+const ARR = 1;
 const PREVIEW_LENGTH = 5;
 
 for(let i = 0; i < BOARD_HEIGHT; i++) {
@@ -31,6 +32,9 @@ window.onload = function() {
 			hold.id = `Q${i},${j}`;
 			if(i === VIS_HEIGHT - 1) {
 				hold.textContent = "HOLD"[j];
+			}
+			if(i === VIS_HEIGHT - 7) {
+				hold.textContent = "LV01"[j];
 			}
 			if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 				boardRow.appendChild(hold);
@@ -161,7 +165,7 @@ function Piece(type) {
 			if(typeof this.lockTimer === "undefined") this.lockTimer = LOCK_DELAY;
 		} else if(vertOff === -1) {
 			// Lock out!!!
-			throw `Lock out!`;
+			return true;
 		} else {
 			if(dist < 1) {
 				this.position[1] -= dist;
@@ -342,6 +346,14 @@ COLORS.set("Z", "red");
 COLORS.set("J", "blue");
 COLORS.set("L", "orange");
 
+// Left, Right, CCW, CW, Hold, HardDrop, SoftDrop
+let keybinds = ["ArrowLeft", "ArrowRight", "z", "x", "Shift", "ArrowUp", "ArrowDown"];
+let controller = [0, 0, 0, 0, 0, 0, 0];
+
+let linesCleared = 0;
+let level = 1;
+let points = 0;
+
 function mainLoop() {
 	try {
 		pixels.forEach(function(row) {
@@ -352,6 +364,7 @@ function mainLoop() {
 			});
 		});
 
+		if(controller[4] === 1) hold();
 		if(typeof currPiece === "undefined") {
 			if(!firstHold) hasHeld = false;
 			if(DEBUG_PIECE_SEQUENCE.length !== 0) {
@@ -384,7 +397,53 @@ function mainLoop() {
 		}
 
 		currPiece.display();
-		currPiece.fall();
+		for(let i = 0; i < controller.length; i++) {
+			controller[i] *= +!!KEYBOARD.get(keybinds[i]);
+			controller[i] += +!!KEYBOARD.get(keybinds[i]);
+		}
+		if(controller[0] && controller[1]) {
+
+		} else if(controller[0]) {
+			let autoRepeating = controller[0] > DAS + 1 && controller[0] % ARR === 0;
+			if(controller[0] === 1 || autoRepeating) currPiece.move("left");
+		} else if(controller[1]) {
+			let autoRepeating = controller[1] > DAS + 1 && controller[1] % ARR === 0;
+			if(controller[1] === 1 || autoRepeating) currPiece.move("right");
+		}
+
+		if(controller[2] && controller[3]) {
+
+		} else if(controller[2]) {
+			if(controller[2] === 1) currPiece.rotate("CCW");
+		} else if(controller[3]) {
+			if(controller[3] === 1) currPiece.rotate("CW");
+		}
+
+		if(controller[5] === 1) {
+			currPiece.fall(BOARD_HEIGHT);
+			currPiece.hardDropped = true;
+			currPiece.lockTimer = 0;
+		}
+		if(controller[6]) currPiece.fall(1);
+
+		if(currPiece.fall()) {
+			pixels.forEach(function(row, rI) {
+				row.forEach(function(pixel, index) {
+					if(pixel.id === "spacer") return;
+					if(pixel.id[0] === "Q") return;
+					pixel.style = `background: ${pixel.col ? "gray" : "black"};`;
+					let halfBoard = Math.floor(VIS_HEIGHT / 2);
+					if(rI === halfBoard + 1) {
+						pixel.style = "";
+						pixel.textContent = "     GAME  OVER"[index];
+					} else if(rI === halfBoard || rI === halfBoard + 2) {
+						pixel.style = "";
+					}
+				});
+			});
+			clearInterval(gameLoop);
+			return;
+		}
 		if(currPiece.lock()) {
 			firstHold = false;
 			let lineClears = pixels.filter(function(row) {
@@ -407,6 +466,15 @@ function mainLoop() {
 				});
 			}
 
+			linesCleared += lineClears.length;
+			if(linesCleared >= level * LV_LINE_REQ) {
+				level++;
+				GRAVITY *= LV_GRAV_MULT;
+				let strLV = level.toString().padStart(2, "0");
+				pixels[VIS_HEIGHT - 7][2].textContent = strLV[0];
+				pixels[VIS_HEIGHT - 7][3].textContent = strLV[1];
+			}
+
 			currPiece = undefined;
 		}
 	} catch(e) {
@@ -415,25 +483,14 @@ function mainLoop() {
 	}
 }
 
+const KEYBOARD = new Map();
+
 document.onkeydown = function(e) {
-	if(typeof currPiece === "undefined") return;
-	if(e.key === "ArrowLeft") {
-		currPiece.move("left");
-	} else if(e.key === "ArrowRight") {
-		currPiece.move("right");
-	} else if(e.key === "ArrowUp") {
-		currPiece.fall(BOARD_HEIGHT);
-		currPiece.hardDropped = true;
-		currPiece.lockTimer = 0;
-	} else if(e.key === "ArrowDown") {
-		currPiece.fall(1);
-	} else if(e.key.toLowerCase() === "z") {
-		currPiece.rotate("CCW");
-	} else if(e.key.toLowerCase() === "x") {
-		currPiece.rotate("CW");
-	} else if(e.key === "Shift") {
-		hold();
-	}
+	KEYBOARD.set(e.key, true);
+}
+
+document.onkeyup = function(e) {
+	KEYBOARD.set(e.key, false);
 }
 
 function shuffle(arr) {
