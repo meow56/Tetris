@@ -3,9 +3,22 @@
 		<meta charset="utf-8">
 		<script src="main.js"></script>
   		<link rel="stylesheet" href="stylesheet.css">
+  		<title>Tetris</title>
 	</head>
 	<body>
 		<table id="board"></table>
-		<p>Controls: Use the left and right arrow keys to move left and right. Use Z to rotate counter-clockwise and X to rotate clockwise. Press the up arrow key to hard drop, or down to soft drop. Press Shift to hold.</p>
+		<h4>Controls:</h4>
+		<p>Use <button id="left">left arrow key</button> to move left and <button id="right">right arrow key</button> to move right.</p>
+		<p>Use <button id="CCW">Z</button> to rotate counter-clockwise and <button id="CW">X</button> to rotate clockwise.</p>
+		<p>Press <button id="hard">up arrow key</button> to hard drop, or <button id="soft">down arrow key</button> to soft drop.</p>
+		<p>Press <button id="hold">Shift</button> to hold.</p>
+		<button id="start">Start the game.</button>
+		<h4>Key:</h4>
+		<p>T-Spin: Displayed as TS or T or TSpin. If the last move of a T piece is a rotation, then consider the 4 corners of the bounding box of the T. If at least 3 of those corners are filled, it is considered a T-Spin. T-Spins are worth more points than regular line clears, and even doing a T-Spin without a line clear awards some points.</p>
+		<p>m: mini. This modifies T-Spins. Consider the two corners that are NOT on the flat side of the T. If only one is filled, it is a T-Spin mini. (Note that if neither are filled, it's not a T-Spin since only a maximum of 2 corners could be filled.) T-Spin minis award fewer points than T-Spins.</p>
+		<p>BTB: Back to Back. If you score a Tetris or a T-Spin, then score another Tetris/T-Spin without a non-T-Spin Single/Double/Triple clear between, the latter clear will be Back to Back. Back to Back line clears are worth 1.5 times the score.</p>
+		<p>Combo: Displayed as CMBO. If you clear lines with consecutive pieces, you will gain combo. You gain 1 combo for every consecutive piece that fulfills this condition--note that clearing multiple lines with one piece still only increases the combo by 1! Obtaining combo grants a small amount of points per piece, which increases the longer the combo is.</p>
+		<h4>Local Leaderboards:</h4>
+		<p id="loadingBoard">Loading...</p>
 	</body>
 </html>
