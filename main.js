@@ -29,7 +29,10 @@ const ARR = 1;
 // The above value is in frames (ie the piece moves every X frames.)
 const PREVIEW_LENGTH = 5;
 // How many future pieces to show to the player.
-// May not work very well above VIS_HEIGHT / 4.
+// Will not work above VIS_HEIGHT / 4.
+const LINE_CLEAR_DELAY = 3;
+// LINE_CLEAR_DELAY: the number of frames between a line clear
+// and when the next piece spawns.
 
 const LEFT_MARGIN_WIDTH = 6;
 // How wide the left margin is,
@@ -49,6 +52,7 @@ window.onload = function() {
 	for(let i = BOARD_HEIGHT - 1; i >= 0; i--) {
 		let boardRow = document.createElement("TR");
 
+		// Populate the left margin.
 		for(let j = 0; j < LEFT_MARGIN_WIDTH; j++) {
 			let hold = document.createElement("TD");
 			hold.id = `Q${i},${j}`;
@@ -82,6 +86,8 @@ window.onload = function() {
 			boardRow.appendChild(spacer);
 		}
 		pixels[i].push(spacer);
+
+		// Populate the actual board.
 		for(let j = 0; j < BOARD_WIDTH; j++) {
 			const pixel = document.createElement("TD");
 			pixel.id = `${i},${j}`;
@@ -91,12 +97,15 @@ window.onload = function() {
 			pixel.style = `background: black;`;
 			pixels[i].push(pixel);
 		}
+
 		spacer = document.createElement("TD");
 		spacer.id = "spacer";
 		if(DEBUG_SHOW_ABOVE || i < VIS_HEIGHT) {
 			boardRow.appendChild(spacer);
 		}
 		pixels[i].push(spacer);
+
+		// Populate the right margin (which contains the piece preview).
 		for(let j = 0; j < 4; j++) {
 			let nextQueue = document.createElement("TD");
 			nextQueue.id = `Q${i},${j}`;
@@ -121,77 +130,19 @@ window.onload = function() {
 			   document.getElementById("hold"),
 			   document.getElementById("hard"),
 			   document.getElementById("soft")];
-// Left, Right, CCW, CW, Hold, HardDrop, SoftDrop
-	document.getElementById("left").onclick = function() {
-		remapping = 1;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
+	// Left, Right, CCW, CW, Hold, HardDrop, SoftDrop
+	buttons.forEach(function(button, index) {
+		button.onclick = function() {
+			remapping = index + 1;
+			for(let i = 0; i < buttons.length; i++) {
+				if(buttons[i].textContent.includes("(remapping...)")) {
+					buttons[i].textContent = buttons[i].textContent.slice(0, -15);
+				}
 			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("left"))
-	document.getElementById("right").onclick = function() {
-		remapping = 2;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("right"))
-	document.getElementById("CCW").onclick = function() {
-		remapping = 3;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("CCW"))
-	document.getElementById("CW").onclick = function() {
-		remapping = 4;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("CW"))
-	document.getElementById("hard").onclick = function() {
-		remapping = 6;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("hard"))
-	document.getElementById("soft").onclick = function() {
-		remapping = 7;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("soft"))
-	document.getElementById("hold").onclick = function() {
-		remapping = 5;
-		for(let i = 0; i < buttons.length; i++) {
-			if(buttons[i].textContent.includes("(remapping...)")) {
-				buttons[i].textContent = buttons[i].textContent.slice(0, -15);
-			}
-		}
-		this.textContent += " (remapping...)";
-		this.blur();
-	}.bind(document.getElementById("hold"))
+			this.textContent += " (remapping...)";
+			this.blur();
+		}.bind(button);
+	});
 
 	document.getElementById("start").onclick = function() {
 		if(gameLoop === undefined) {
@@ -227,7 +178,7 @@ function Piece(type) {
 	this.name = type;
 	this.position = [LEFT_MARGIN_WIDTH + 1 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
 	this.shape;
-	this.color;
+	this.color = COLORS.get(this.name);
 	this.ghostColor;
 	this.lockTimer;
 	this.rotation = 0;
@@ -241,49 +192,42 @@ function Piece(type) {
 						  [0, 1, 1, 1, 1], 
 						  [0, 0, 0, 0, 0], 
 						  [0, 0, 0, 0, 0]];
-			this.color = "cyan";
 			this.ghostColor = "#008080";
 			break;
 		case "J":
 			this.shape = [[1, 0, 0], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "blue";
 			this.ghostColor = "#000080";
 			break;
 		case "L":
 			this.shape = [[0, 0, 1], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "orange";
 			this.ghostColor = "#804000";
 			break;
 		case "O":
 			this.shape = [[0, 1, 1],
 						  [0, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "yellow";
 			this.ghostColor = "#808000";
 			break;
 		case "S":
 			this.shape = [[0, 1, 1], 
 						  [1, 1, 0], 
 						  [0, 0, 0]];
-			this.color = "lime";
 			this.ghostColor = "#008000";
 			break;
 		case "T":
 			this.shape = [[0, 1, 0], 
 						  [1, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "fuchsia";
 			this.ghostColor = "#800080";
 			break;
 		case "Z":
 			this.shape = [[1, 1, 0], 
 						  [0, 1, 1], 
 						  [0, 0, 0]];
-			this.color = "red";
 			this.ghostColor = "#800000";
 			break;
 		default:
@@ -398,6 +342,9 @@ function Piece(type) {
 			if(aboveBoard) {
 				// Top out!!!
 				return "Top out";
+				// When I think about it, I'm not sure if this is guideline.
+				// It's possible that line clears are supposed to be checked
+				// before game overs. I dunno.
 			}
 			if(this.tSpin) {
 				let filledCorners = 0;
@@ -456,6 +403,7 @@ function Piece(type) {
 		if(this.hardDropped) return;
 		let newShape = [];
 		let newRotState = this.rotation;
+		// Rotate the shape.
 		if(direction === "CW") {
 			for(let i = 0; i < this.shape.length; i++) { // what column?
 				let newRow = [];
@@ -489,6 +437,7 @@ function Piece(type) {
 		let halfStep = Math.floor(this.shape.length / 2);
 		let isClipped;
 		let nextPos;
+		// Check offsets.
 		do {
 			let nextOffset = offsetTable[nextKick][this.rotation].slice();
 			nextOffset[0] -= offsetTable[nextKick][newRotState][0];
@@ -560,6 +509,8 @@ let level = 1;
 let score = 0;
 let backToBack = false;
 let combo = -1;
+let lineClearDelay = 0;
+let linesToClear;
 
 function mainLoop() {
 	try {
@@ -570,16 +521,56 @@ function mainLoop() {
 				pixel.style = `background: ${pixel.col || "black"};`;
 			});
 		});
+		// Clear the board of temporary colors (falling pieces and ghost pieces).
+
+		for(let i = 0; i < controller.length; i++) {
+			controller[i] *= +!!KEYBOARD.get(keybinds[i]);
+			// sets controller[i] to 0 if the key is released.
+			controller[i] += +!!KEYBOARD.get(keybinds[i]);
+			// adds 1 if the key is currently held.
+		}
+		// Since the controller fires before LCD, we can
+		// "charge" ARR during LCD. So the next piece
+		// will immediately start moving left or right when it spawns.
+
+		if(lineClearDelay-- > 0) {
+			let lCRatio = 1 - (lineClearDelay / LINE_CLEAR_DELAY);
+			let blocks = lCRatio * BOARD_WIDTH;
+			for(let i = 0; i < linesToClear.length; i++) {
+				linesToClear[i].forEach(function(pixel, index) {
+					if(pixel.id === "spacer" || pixel.id[0] === "Q") return;
+					let trueIndex = index - LEFT_MARGIN_WIDTH - 1;
+					if(blocks >= trueIndex) {
+						pixel.style = `background: white;`;
+					}
+				});
+			}
+
+			if(lCRatio === 1) {
+				for(let i = linesToClear.length - 1; i >= 0; i--) {
+					let rowToClear = +linesToClear[i][LEFT_MARGIN_WIDTH + 2].id.split(",")[0];
+					pixels.forEach(function(row, rI) {
+						if(rI === BOARD_HEIGHT - 1) {
+							for(let i = 0; i < row.length; i++) {
+								row[i].col = undefined;
+							}
+						} else if(rI >= rowToClear) {
+							for(let i = 0; i < row.length; i++) {
+								row[i].col = pixels[rI + 1][i].col;
+							}
+						}
+					});
+				}
+				// Do the actual line clearing by shifting lines down.
+			}
+			return;
+		}
 
 		if(typeof currPiece === "undefined") createNewPiece();
 
 		currPiece.display();
-		for(let i = 0; i < controller.length; i++) {
-			controller[i] *= +!!KEYBOARD.get(keybinds[i]);
-			controller[i] += +!!KEYBOARD.get(keybinds[i]);
-		}
 		if(controller[0] && controller[1]) {
-
+			// Left and right input cancel out.
 		} else if(controller[0]) {
 			let autoRepeating = controller[0] > DAS && (controller[0] - DAS - 1) % ARR === 0;
 			if(controller[0] === 1 || autoRepeating) currPiece.move("left");
@@ -588,22 +579,22 @@ function mainLoop() {
 			if(controller[1] === 1 || autoRepeating) currPiece.move("right");
 		}
 
-		if(controller[2] && controller[3]) {
-
-		} else if(controller[2]) {
-			if(controller[2] === 1) currPiece.rotate("CCW");
-		} else if(controller[3]) {
-			if(controller[3] === 1) currPiece.rotate("CW");
+		if(controller[2] === 1 && controller[3] === 1) {
+			// CCW and CW rotate cancel out.
+		} else if(controller[2] === 1) {
+			currPiece.rotate("CCW");
+		} else if(controller[3] === 1) {
+			currPiece.rotate("CW");
 		}
 
+		// Hard Drop
 		if(controller[5] === 1) {
 			currPiece.fall(BOARD_HEIGHT, 2);
 			currPiece.hardDropped = true;
 			currPiece.lockTimer = 0;
 		}
-		if(controller[6]) {
-			currPiece.fall(1, 1);
-		}
+		// Soft Drop
+		if(controller[6]) currPiece.fall(1, 1);
 		if(controller[4] === 1) hold();
 		if(typeof currPiece === "undefined") createNewPiece();
 
@@ -634,107 +625,90 @@ function lockHandler() {
 						   || e.id === "spacer"
 						   || e.id[0] === "Q");
 	});
+	linesToClear = lineClears.slice();
 
 	if(lineClears.length === 0) {
 		combo = -1;
 	} else {
 		score += 50 * ++combo * level;
+		lineClearDelay = LINE_CLEAR_DELAY;
 	}
-
+	// The line clear display looks like this:
+	// BTBmin
+	// T-Spin
+	// Single
+	// CMB 00
 	if(lineClears.length !== 4
 	   && lineClears.length !== 0
 	   && !currPiece.tSpin) backToBack = false;
 	let lineClearPoints = [0, 100, 300, 500, 800];
 	let tClearPoints = [400, 800, 1200, 1600];
 	let miniPoints = [100, 200, 1200];
-	let clearDisplay = "";
-	if(currPiece.tSpin) {
-		if(currPiece.mini) {
-			clearDisplay += `${(backToBack && lineClears.length !== 0) ? "BTB" : ""}mT`;
-			score += miniPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
-			switch(lineClears.length) {
-				case 0:
-					clearDisplay += "Spin";
-					break;
-				case 1:
-					clearDisplay += "1";
-					break;
-				case 2:
-					clearDisplay += "2";
-					break;
-				case 3:
-					clearDisplay += "3";
-					break;
-			}
-		} else {
-			clearDisplay += (backToBack && lineClears.length !== 0) ? "BTBTS" : "TS";
-			score += tClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
-			switch(lineClears.length) {
-				case 0:
-					clearDisplay += "pin";
-					break;
-				case 1:
-					clearDisplay += "1";
-					break;
-				case 2:
-					clearDisplay += "2";
-					break;
-				case 3:
-					clearDisplay += "3";
-					break;
-			}
+	if(backToBack && lineClears.length !== 0) {
+		for(let i = 0; i < 3; i++) {
+			pixels[VIS_HEIGHT - 15][i].textContent = "BTB"[i];
 		}
 	} else {
-		clearDisplay += (backToBack && lineClears.length !== 0) ? "BTB" : "";
-		score += lineClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
-		switch(lineClears.length) {
-			case 1:
-				clearDisplay += "Single";
-				break;
-			case 2:
-				clearDisplay += "Double";
-				break;
-			case 3:
-				clearDisplay += "Triple";
-				break;
-			case 4:
-				clearDisplay += "Tetris";
-				break;
+		for(let i = 0; i < 3; i++) {
+			pixels[VIS_HEIGHT - 15][i].textContent = "";
 		}
 	}
-	clearDisplay = clearDisplay.slice(0, 6);
-	for(let j = 0; j < 6; j++) {
-		pixels[VIS_HEIGHT - 15][j].textContent = clearDisplay[j];
+	if(currPiece.tSpin) {
+		if(currPiece.mini) {
+			for(let i = 3; i < 6; i++) {
+				pixels[VIS_HEIGHT - 15][i].textContent = "min"[i];
+			}
+			score += miniPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+		} else {
+			score += tClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+			for(let i = 3; i < 6; i++) {
+				pixels[VIS_HEIGHT - 15][i].textContent = "";
+			}
+		}
+		for(let i = 0; i < 6; i++) {
+			pixels[VIS_HEIGHT - 16][i].textContent = "T-Spin"[i];
+		}
+	} else {
+		score += lineClearPoints[lineClears.length] * level * (backToBack ? 1.5 : 1);
+		for(let i = 0; i < 6; i++) {
+			pixels[VIS_HEIGHT - 16][i].textContent = "";
+		}
+	}
+	let toDisplay = "";
+	switch(lineClears.length) {
+		case 1:
+			toDisplay = "Single";
+			break;
+		case 2:
+			toDisplay = "Double";
+			break;
+		case 3:
+			toDisplay = "Triple";
+			break;
+		case 4:
+			toDisplay = "Tetris";
+			break;
+	}
+	for(let i = 0; i < 6; i++) {
+		pixels[VIS_HEIGHT - 17][i].textContent = toDisplay[i];
 	}
 	if(combo > 0) {
 		let comboDisplay = combo.toString().padStart(2, "0");
-		comboDisplay += "CMBO";
-		for(let j = 0; j < 6; j++) {
-			pixels[VIS_HEIGHT - 16][j].textContent = comboDisplay[j];
+		comboDisplay = "CMB " + comboDisplay;
+		for(let i = 0; i < 6; i++) {
+			pixels[VIS_HEIGHT - 18][i].textContent = comboDisplay[i];
 		}
 	} else {
-		for(let j = 0; j < 6; j++) {
-			pixels[VIS_HEIGHT - 16][j].textContent = "";
+		for(let i = 0; i < 6; i++) {
+			pixels[VIS_HEIGHT - 18][i].textContent = "";
 		}
 	}
 	if(lineClears.length === 4 || currPiece.tSpin) backToBack = true;
-	for(let i = lineClears.length - 1; i >= 0; i--) {
-		let rowToClear = +lineClears[i][10].id.split(",")[0];
-		pixels.forEach(function(row, rI) {
-			if(rI === BOARD_HEIGHT - 1) {
-				for(let i = 0; i < row.length; i++) {
-					row[i].col = undefined;
-				}
-			} else if(rI >= rowToClear) {
-				for(let i = 0; i < row.length; i++) {
-					row[i].col = pixels[rI + 1][i].col;
-				}
-			}
-		});
-	}
 
 	linesCleared += lineClears.length;
-	if(linesCleared >= level * LV_LINE_REQ) {
+	while(linesCleared >= level * LV_LINE_REQ) {
+		// If LV_LINE_REQ < 4, you can go up by multiple levels with one line clear.
+		// Hence while and not if.
 		level++;
 		GRAVITY *= LV_GRAV_MULT;
 		let strLV = level.toString().padStart(2, "0");
@@ -856,6 +830,9 @@ function gameOver() {
 
 function createNewPiece() {
 	if(!firstHold) hasHeld = false;
+	// On the first hold, we need to spawn a new piece.
+	// But the player still hasn't placed a tetromino when we do.
+	// So we can't reset hasHeld yet.
 	if(DEBUG_PIECE_SEQUENCE.length !== 0) {
 		if(debugPieceInd === DEBUG_PIECE_SEQUENCE.length) {
 			clearInterval(gameLoop);
@@ -872,6 +849,7 @@ function createNewPiece() {
 				pixels[i][BOARD_WIDTH + j + LEFT_MARGIN_WIDTH + 2].style = "";
 			}
 		}
+		// Clear the piece preview.
 		for(let i = 0; i < PREVIEW_LENGTH; i++) {
 			let thisPreH = VIS_HEIGHT - (i * 4) - 2;
 			let thisPreW = BOARD_WIDTH + LEFT_MARGIN_WIDTH + 1;
@@ -882,6 +860,7 @@ function createNewPiece() {
 					= `background: ${thisColor}`;
 			}
 		}
+		// Draw the piece preview.
 	}
 }
 
@@ -897,10 +876,12 @@ document.onkeydown = function(e) {
 		let displayText = e.key;
 		if(displayText.length === 1) displayText = displayText.toUpperCase();
 		if(displayText.startsWith("Arrow")) {
-			displayText = displayText.slice(5).toLowerCase() + " arrow key";
+			displayText = `the ${displayText.slice(5).toLowerCase()} arrow key`;
 		}
 		if(displayText === "CapsLock") displayText = "Caps Lock";
 		if(displayText === " ") displayText = "Space";
+		if(displayText === "AudioVolumeDown") displayText = "the lower volume key";
+		if(displayText === "AudioVolumeUp") displayText = "the raise volume key";
 		buttons[remapping - 1].textContent = displayText;
 		remapping = 0;
 
@@ -922,6 +903,8 @@ function shuffle(arr) {
 }
 
 let hasHeld = false;
+// The player can't hold twice without placing an tetromino.
+// So this bool is whether the player has held without placing a piece.
 let firstHold = false;
 let heldPiece;
 function hold() {
@@ -930,17 +913,22 @@ function hold() {
 	if(typeof heldPiece === "undefined") firstHold = true;
 	let toHold = currPiece;
 	currPiece = heldPiece;
+
+	// Reset the piece that is getting sent to hold...
 	toHold.position = [LEFT_MARGIN_WIDTH + 1 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
 	while(toHold.rotation !== 0) {
 		toHold.rotate("CW");
 	}
 	toHold.position = [LEFT_MARGIN_WIDTH + 1 + Math.floor((BOARD_WIDTH - 1) / 2), 21];
+	// No more offsets.
 	toHold.hardDropped = false;
 	toHold.lockTimer = undefined;
 	heldPiece = toHold;
+
 	for(let i = 0; i < VIS_HEIGHT; i++) {
 		for(let j = 0; j < 4; j++) {
 			pixels[i][j].style = "";
+			// Clear the hold box.
 		}
 	}
 	let thisPreH = VIS_HEIGHT - 2;
@@ -950,5 +938,6 @@ function hold() {
 	for(let j = 0; j < thisShape.length; j++) {
 		pixels[thisPreH + thisShape[j][0]][thisPreW + thisShape[j][1]].style
 			= `background: ${thisColor}`;
+		// Display the held piece in the hold box.
 	}
 }
